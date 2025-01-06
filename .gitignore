@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+# package-lock.json should be committed when using npm
+
+# Environment variables
+.env
+
+package-lock.json
