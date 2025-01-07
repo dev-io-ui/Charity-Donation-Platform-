@@ -35,6 +35,17 @@ exports.getAllCharities = async (req, res) => {
   }
 };
 
+exports.getCharities = async (req, res) => {
+  try {
+   
+
+    const charities = await Charity.findByPk( req.params.id);
+    res.json(charities);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.createCharity = async (req, res) => {
   try {
     const charity = await Charity.create({

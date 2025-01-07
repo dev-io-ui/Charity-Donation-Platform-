@@ -1,5 +1,7 @@
 const { User, Charity, Donation } = require('../models');
 const { Op } = require('sequelize');
+const { Sequelize } = require('sequelize');
+const config = require('../config/database.js').development;
 
 exports.getAllUsers = async (req, res) => {
   try {
@@ -24,77 +26,130 @@ exports.getAllCharities = async (req, res) => {
   }
 };
 
-exports.getDonationStats = async (req, res) => {
-  try {
-    // Overall statistics
-    const totalDonations = await Donation.sum('amount');
-    const donationCount = await Donation.count();
-    
-    // Monthly statistics
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    
-    const monthlyStats = await Donation.findAll({
-      attributes: [
-        [sequelize.fn('MONTH', sequelize.col('createdAt')), 'month'],
-        [sequelize.fn('YEAR', sequelize.col('createdAt')), 'year'],
-        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-      ],
-      where: {
-        createdAt: { [Op.gte]: sixMonthsAgo }
-      },
-      group: [
-        sequelize.fn('MONTH', sequelize.col('createdAt')),
-        sequelize.fn('YEAR', sequelize.col('createdAt'))
-      ],
-      order: [
-        [sequelize.fn('YEAR', sequelize.col('createdAt')), 'DESC'],
-        [sequelize.fn('MONTH', sequelize.col('createdAt')), 'DESC']
-      ]
-    });
+// // Approve or reject charity
+// exports.approveCharity = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { status, comments } = req.body;
 
-    // Charity-wise statistics
-    const charityStats = await Donation.findAll({
-      attributes: [
-        'CharityId',
-        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-      ],
-      include: [{
-        model: Charity,
-        attributes: ['name']
-      }],
-      group: ['CharityId', 'Charity.name'],
-      order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']]
-    });
-    
+//     // Validate status
+//     if (!['approved', 'rejected'].includes(status)) {
+//       return res.status(400).json({ message: "Status must be either 'approved' or 'rejected'" });
+//     }
+
+//     // Find charity
+//     const charity = await Charity.findByPk(id);
+//     if (!charity) {
+//       return res.status(404).json({ message: 'Charity not found' });
+//     }
+
+//     // Update charity status
+//     await charity.update({
+//       isApproved: status === 'approved',
+//       status: status,
+//       comments: comments,
+//       approvedAt: status === 'approved' ? new Date() : null,
+//       approvedBy: req.user.id 
+//     });
+
+//     res.json({
+//       message: `Charity ${status} successfully`,
+//       charity: {
+//         id: charity.id,
+//         name: charity.name,
+//         status: charity.status,
+//         isApproved: charity.isApproved,
+//         comments: charity.comments,
+//         approvedAt: charity.approvedAt
+//       }
+//     });
+
+//   } catch (err) {
+//     console.error('Error approving charity:', err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+exports.approveCharity = async (req, res) => {
+  try {
+    console.log("in aprove function");
+    const { id } = req.params;
+    const { isApproved } = req.body; // Destructure isApproved from request body
+
+    // Check if isApproved is provided and is a boolean
+    if (typeof isApproved !== 'boolean') {
+      return res.status(400).json({ message: 'isApproved must be a boolean value' });
+    }
+
+    const charity = await Charity.findByPk(id);
+
+    if (!charity) {
+      return res.status(404).json({ message: 'Charity not found' });
+    }
+
+    // Update charity approval status
+    await charity.update({ isApproved });
+
     res.json({
-      overall: {
-        totalAmount: totalDonations,
-        totalCount: donationCount
-      },
-      monthly: monthlyStats,
-      byCharity: charityStats
+      message: `Charity ${isApproved ? 'approved' : 'rejected'} successfully`,
+      charity
     });
   } catch (err) {
+    console.error('Error approving charity:', err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Update user status (active/inactive)
+
+exports.getDonationStats = async (req, res) => {
+  try {
+    const { charityId } = req.query; 
+
+    //the where clause based on charityId
+    const whereClause = charityId ? { charityId } : {}; 
+
+    const totalDonations = await Donation.sum('amount', { where: whereClause }) || 0;
+    const donationCount = await Donation.count({ where: whereClause });
+
+    const monthlyStats = await Donation.findAll({
+      attributes: [
+        [Sequelize.fn('MONTH', Sequelize.col('createdAt')), 'month'],
+        [Sequelize.fn('YEAR', Sequelize.col('createdAt')), 'year'],
+        [Sequelize.fn('SUM', Sequelize.col('amount')), 'total'],
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+      ],
+      where: whereClause, //filter for charityId
+      group: ['month', 'year'],
+      order: [['year', 'DESC'], ['month', 'DESC']]
+    });
+
+    res.json({
+      totalDonations,
+      donationCount,
+      monthlyStats
+    });
+  } catch (err) {
+    console.error('Error getting donation stats:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
 exports.updateUserStatus = async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { isActive } = req.body;
+    const { id } = req.params;
+    const { status } = req.body;
 
-    const user = await User.findByPk(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    if (!['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ message: "Status must be either 'active' or 'inactive'" });
     }
 
-    await user.update({ isActive });
-    res.json({ message: "User status updated successfully" });
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    await user.update({ status });
+    res.json({ message: `User status updated to ${status}` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

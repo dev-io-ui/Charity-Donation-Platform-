@@ -3,6 +3,7 @@ const Razorpay = require('razorpay');
 const { sendDonationConfirmation } = require('../utils/email');
 const PDFDocument = require('pdfkit');
 const crypto = require('crypto');
+const sequelize = require('../models/index').sequelize; // Assuming this is where your sequelize instance is defined
 
 // Debug: Log environment variables
 console.log('Razorpay Key ID:', process.env.RAZORPAY_KEY_ID);
@@ -42,20 +43,14 @@ exports.createDonationOrder = async (req, res) => {
       receipt: `don_${Date.now()}`,
       notes: {
         charityId: charityId,
-        userId: req.userId
+        userId: req.user.id // Changed from req.userId
       }
     };
 
     const order = await razorpay.orders.create(options);
-
-    res.json({
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      key: process.env.RAZORPAY_KEY_ID
-    });
+    res.json({ order });
   } catch (err) {
-    console.error('Error creating order:', err);
+    console.error('Error creating donation order:', err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -85,32 +80,52 @@ exports.verifyDonation = async (req, res) => {
     const payment = await razorpay.payments.fetch(razorpay_payment_id);
     const amount = payment.amount / 100; // Convert paise to rupees
 
-    // Create donation record
-    const donation = await Donation.create({
-      amount,
-      UserId: req.userId,
-      CharityId: charityId,
-      paymentId: razorpay_payment_id,
-      orderId: razorpay_order_id,
-      status: 'completed'
-    });
+    // Start a transaction
+    const result = await sequelize.transaction(async (t) => {
+      // Create donation record
+      const donation = await Donation.create({
+        amount,
+        UserId: req.user.id, // Changed from req.userId
+        CharityId: charityId,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        status: 'completed'
+      }, { transaction: t });
 
-    // Update charity's current amount
-    const charity = await Charity.findByPk(charityId);
-    await charity.increment('currentAmount', { by: amount });
+      // Update charity's current amount
+      const charity = await Charity.findByPk(charityId, { transaction: t });
+      if (!charity) {
+        throw new Error('Charity not found');
+      }
 
-    // Send confirmation email
-    const user = await User.findByPk(req.userId);
-    await sendDonationConfirmation(user.email, {
-      amount,
-      charityName: charity.name,
-      donationId: donation.id
+      // Update charity's current amount using raw SQL to ensure atomic update
+      await Charity.update(
+        {
+          currentAmount: sequelize.literal(`currentAmount + ${amount}`)
+        },
+        {
+          where: { id: charityId },
+          transaction: t
+        }
+      );
+
+      // Send confirmation email
+      const user = await User.findByPk(req.user.id);
+      await sendDonationConfirmation(user.email, {
+        amount,
+        charityName: charity.name,
+        donationId: donation.id
+      });
+
+      return { donation, charity };
     });
 
     res.json({
       message: "Donation successful",
-      donation
+      donation: result.donation,
+      updatedAmount: result.charity.currentAmount + amount
     });
+
   } catch (err) {
     console.error('Error verifying donation:', err);
     res.status(500).json({ message: err.message });
@@ -120,10 +135,11 @@ exports.verifyDonation = async (req, res) => {
 exports.getDonationHistory = async (req, res) => {
   try {
     const donations = await Donation.findAll({
-      where: { UserId: req.userId },
-      include: [
-        { model: Charity, attributes: ['name'] }
-      ],
+      where: { UserId: req.user.id }, 
+      include: [{
+        model: Charity,
+        attributes: ['name']
+      }],
       order: [['createdAt', 'DESC']]
     });
     res.json(donations);
@@ -138,7 +154,7 @@ exports.getDonationReceipt = async (req, res) => {
     const donation = await Donation.findOne({
       where: { 
         id: req.params.id,
-        UserId: req.userId
+        UserId: req.user.id
       },
       include: [
         { model: Charity, attributes: ['name'] },

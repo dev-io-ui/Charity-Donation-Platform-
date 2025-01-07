@@ -3,8 +3,11 @@ const { ImpactReport, Charity } = require('../models');
 exports.createImpactReport = async (req, res) => {
   try {
     const { charityId } = req.params;
+    // const{title , description , beneficiariesCount} = req.body;
+    console.log("charityid is",charityId);
     const charity = await Charity.findByPk(charityId);
-    
+    console.log("charity is",charity);
+
     if (!charity) {
       return res.status(404).json({ message: "Charity not found" });
     }

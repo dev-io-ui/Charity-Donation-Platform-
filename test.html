@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Razorpay Payment</title>
+</head>
+<body>
+  <h1>Test Razorpay Payment</h1>
+  <button id="donateBtn">Donate Now</button>
+
+  <!-- Add Axios CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+  <script>
+    const token = localStorage.getItem("token"); // Replace with your token logic
+    document.getElementById("donateBtn").addEventListener("click", async function () {
+      try {
+      
+        const donationDetails = {
+          charityId: 2, 
+          amount: 1000, 
+          currency: "INR",
+          anonymous: false, 
+        };
+
+        
+        const response = await axios.post(
+          "http://localhost:3000/api/donations/create-order",
+          donationDetails,
+          {
+            headers: {
+              Authorization: token, 
+            },
+          }
+        );
+
+        const data = response.data;
+        console.log("Order Data:", data);
+
+        // Razorpay options
+        const options = {
+          key: data.key_id,
+          order_id: data.order.id,
+          amount: data.order.amount, 
+          currency: data.order.currency, 
+          handler: async function (response) {
+            console.log("Payment Success:", response);
+
+            // Send the payment confirmation to the backend
+            const verificationResponse = await axios.post(
+              "http://localhost:3000/api/donations/verify",
+              {
+                charityId: donationDetails.charityId,
+                razorpay_order_id: data.order.id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              },
+              {
+                headers: {
+                  Authorization: token,
+                },
+              }
+            );
+
+            const verificationResult = verificationResponse.data;
+            console.log("Verification Result:", verificationResult);
+
+            if (verificationResult.success) {
+              alert("Donation Successful! Thank you for your support.");
+            } 
+          },
+        };
+
+        // Open Razorpay payment window
+        const rzp = new Razorpay(options);
+        rzp.open();
+        e.preventDefault();
+
+      } catch (err) {
+        console.error("Error:", err);
+      }
+    });
+  </script>
+</body>
+</html>

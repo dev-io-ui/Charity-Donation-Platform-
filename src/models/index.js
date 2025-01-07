@@ -19,16 +19,19 @@ db.Sequelize = Sequelize;
 db.User = require('./user.model')(sequelize, Sequelize);
 db.Charity = require('./charity.model')(sequelize, Sequelize);
 db.Donation = require('./donation.model')(sequelize, Sequelize);
-db.ImpactReport = require('./impact_report.model')(sequelize, Sequelize);
+db.ImpactReport = require('./impact_report.model.js')(sequelize, Sequelize);
 
-// Relationships
+// Define relationships
 db.User.hasMany(db.Donation);
 db.Donation.belongsTo(db.User);
+
+// db.User.hasMany(db.Charity);
+// db.Charity.belongsTo(db.User);
 
 db.Charity.hasMany(db.Donation);
 db.Donation.belongsTo(db.Charity);
 
-db.Charity.hasMany(db.ImpactReport);
-db.ImpactReport.belongsTo(db.Charity);
+db.Charity.hasMany(db.ImpactReport, { foreignKey: 'CharityId', onDelete: 'CASCADE' });
+db.ImpactReport.belongsTo(db.Charity, { foreignKey: 'CharityId' });
 
 module.exports = db;

@@ -12,7 +12,8 @@ router.post('/', verifyToken, charityController.createCharity);
 // Update charity details
 router.put('/:id', verifyToken, charityController.updateCharity);
 
-// Approve/reject charity (admin only)
-router.patch('/:id/approve', verifyToken, isAdmin, charityController.approveCharity);
+//get charity by id
+router.get('/:id', verifyToken, charityController.getCharities);
+
 
 module.exports = router;

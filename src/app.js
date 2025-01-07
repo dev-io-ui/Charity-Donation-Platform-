@@ -17,7 +17,7 @@ const userRoutes = require('./routes/user.routes');
 const charityRoutes = require('./routes/charity.routes');
 const donationRoutes = require('./routes/donation.routes');
 const adminRoutes = require('./routes/admin.routes');
-const impactRoutes = require('./routes/impact.routes');
+const impactReportRoutes = require("./routes/impact.routes");
 
 const app = express();
 
@@ -31,17 +31,22 @@ app.use('/api/users', userRoutes);
 app.use('/api/charities', charityRoutes);
 app.use('/api/donations', donationRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/impact', impactRoutes);
+app.use('/api/impact',impactReportRoutes);
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: err.message || 'Something went wrong!' });
+});
+
+// Start server
 const PORT = process.env.PORT || 3000;
-
-// Sync database and start server
-sequelize.sync()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Unable to connect to the database:', err);
-  });
+app.listen(PORT, async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('Database connection established successfully.');
+    console.log(`Server is running on port ${PORT}`);
+  } catch (error) {
+    console.error('Unable to connect to the database:', error);
+  }
+});
